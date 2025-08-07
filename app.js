@@ -7,6 +7,15 @@ const port = 3000
 
 app.use(cors())
 
+app.post("/:filename", (req, res) => {
+  const writeStream = createWriteStream(`./storage/${req.params.filename}`);
+  req.pipe(writeStream);
+  req.on("end", () => {
+    res.json({ message: "File Uploaded" });
+  });
+});
+
+
 
 app.get("/", async (req,res) => {
    const fileList = await readdir("./Storage") 
