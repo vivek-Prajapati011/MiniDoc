@@ -6,6 +6,7 @@ const app = express()
 const port = 3000
 
 app.use(cors())
+app.use(express.static("Storage")) 
 
 app.get("/", async (req,res) => {
    const fileList = await readdir("./Storage") 
