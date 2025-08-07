@@ -14,11 +14,14 @@ app.get("/", async (req,res) => {
    
 } )
 
-app.get("/:fileName", (req, res) => {
-  const {fileName} = req.params
-  res.sendFile(`${import.meta.dirname}/Storage/${fileName}`)
-  console.log(req.params)
-} )
+app.get("/:filename", (req, res) => {
+  const { filename } = req.params;
+  if (req.query.action === "download") {
+    res.set("Content-Disposition", "attachment");
+  }
+  res.sendFile(`${import.meta.dirname}/Storage/${filename}`);
+}); 
+
  app.listen(port, () => {
     console.log("server is runing on this port", port)
  }) 
