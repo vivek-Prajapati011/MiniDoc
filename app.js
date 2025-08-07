@@ -22,6 +22,12 @@ app.get("/:filename", (req, res) => {
   res.sendFile(`${import.meta.dirname}/Storage/${filename}`);
 }); 
 
+app.patch("/:filename", async (req, res) => {
+  const { filename } = req.params;
+  await rename(`./storage/${filename}`, `./storage/${req.body.newFilename}`);
+  res.json({ message: "Renamed" });
+});
+
  app.listen(port, () => {
     console.log("server is runing on this port", port)
  }) 
