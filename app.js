@@ -24,8 +24,19 @@ app.get("/:filename", (req, res) => {
 
 app.patch("/:filename", async (req, res) => {
   const { filename } = req.params;
-  await rename(`./storage/${filename}`, `./storage/${req.body.newFilename}`);
+  await rename(`./Storage/${filename}`, `./Storage/${req.body.newFilename}`);
   res.json({ message: "Renamed" });
+});
+
+app.delete("/:filename", async (req, res) => {
+  const { filename } = req.params;
+  const filePath = `./Storage/${filename}`;
+  try {
+    await rm(filePath);
+    res.json({ message: "File Deleted Successfully" });
+  } catch (err) {
+    res.status(404).json({ message: "File Not Found!" });
+  }
 });
 
  app.listen(port, () => {
