@@ -1,6 +1,6 @@
 import express from "express"
 import cors from "cors"
-import {readdir} from "fs/promises"
+import {readdir,rename, rm } from "fs/promises"
 import { createWriteStream } from "fs"
 
 const app = express()
