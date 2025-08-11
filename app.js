@@ -18,7 +18,7 @@ app.post("/:filename", (req, res) => {
 
 
 
-app.get("/", async (req,res) => {
+app.get("/directory", async (req,res) => {
    const fileList = await readdir("./Storage") 
    res.json(fileList)
    
