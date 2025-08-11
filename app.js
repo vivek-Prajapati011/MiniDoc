@@ -8,7 +8,7 @@ const port = 3000
 
 app.use(cors())
 
-app.post("/:filename", (req, res) => {
+app.post("/files/:filename", (req, res) => {
   const writeStream = createWriteStream(`./storage/${req.params.filename}`);
   req.pipe(writeStream);
   req.on("end", () => {
