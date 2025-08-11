@@ -24,7 +24,7 @@ app.get("/directory", async (req,res) => {
    
 } )
 
-app.get("/:filename", (req, res) => {
+app.get("/files/:filename", (req, res) => {
   const { filename } = req.params;
   if (req.query.action === "download") {
     res.set("Content-Disposition", "attachment");
@@ -32,13 +32,13 @@ app.get("/:filename", (req, res) => {
   res.sendFile(`${import.meta.dirname}/Storage/${filename}`);
 }); 
 
-app.patch("/:filename", async (req, res) => {
+app.patch("/files/:filename", async (req, res) => {
   const { filename } = req.params;
   await rename(`./Storage/${filename}`, `./Storage/${req.body.newFilename}`);
   res.json({ message: "Renamed" });
 });
 
-app.delete("/:filename", async (req, res) => {
+app.delete("/files/:filename", async (req, res) => {
   const { filename } = req.params;
   const filePath = `./Storage/${filename}`;
   try {
