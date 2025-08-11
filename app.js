@@ -2,6 +2,7 @@ import express from "express"
 import cors from "cors"
 import {readdir,rename, rm } from "fs/promises"
 import { createWriteStream } from "fs"
+import { stat } from "fs/promises"
 
 const app = express()
 const port = 3000
@@ -9,7 +10,7 @@ const port = 3000
 app.use(cors())
 
 app.post("/files/:filename", (req, res) => {
-  const writeStream = createWriteStream(`./storage/${req.params.filename}`);
+  const writeStream = createWriteStream(`./Storage/${req.params.filename}`);
   req.pipe(writeStream);
   req.on("end", () => {
     res.json({ message: "File Uploaded" });
@@ -18,11 +19,20 @@ app.post("/files/:filename", (req, res) => {
 
 
 
-app.get("/directory", async (req,res) => {
-   const fileList = await readdir("./Storage") 
-   res.json(fileList)
+app.get("/directory/{:dirname}", async (req, res) => {
+    const { dirname } = req.params;
+    console.log(req.params)
+    const fullDirPath = `./Storage/${dirname? dirname:""}`;//optional 
+    const filesList = await readdir(fullDirPath);
+    const resData = [];
+    for (const item of filesList) {
+      const stats = await stat(`${fullDirPath}/${item}`);
+     
+      resData.push({ name: item, isDirectory: stats.isDirectory() });
+    }
+    res.json(resData);
    
-} )
+  })
 
 app.get("/files/:filename", (req, res) => {
   const { filename } = req.params;
