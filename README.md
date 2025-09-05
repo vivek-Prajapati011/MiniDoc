@@ -1,82 +1,221 @@
-# Mini Doc
+# MiniDoc - File Management API
 
-A minimal documentation for this project. It gives you a fast overview, setup steps, and how to use and extend the codebase.
+A simple Express.js backend API for file and directory management operations.
 
-## Overview
+## 🚀 Overview
 
-- **Purpose**: Briefly describe what the project does and who it's for.
-- **Tech stack**: List the primary languages, frameworks, and tools used.
+MiniDoc provides REST API endpoints for:
+- 📁 **Browse directories** - List files and folders
+- 📤 **Upload files** - Store files in the storage directory
+- 📥 **Download files** - Retrieve files from storage
+- ✏️ **Rename files** - Change file/folder names
+- 🗑️ **Delete files** - Remove files and folders
 
-## Getting Started
+## 🛠️ Tech Stack
 
-1. Prerequisites
-   - Install Node.js LTS (or the required runtime for your project)
-   - Install Git
-2. Clone
+- **Node.js** with Express.js framework
+- **CORS** enabled for cross-origin requests
+- **File System** operations for storage management
+- **ES Modules** (import/export syntax)
+
+## 📋 Prerequisites
+
+- Node.js (v16 or higher)
+- npm or yarn package manager
+
+## 🚀 Getting Started
+
+### Installation
+
+1. Navigate to the MiniDoc directory:
    ```bash
-   git clone <your-repo-url>
-   cd project
+   cd MiniDoc
    ```
-3. Install dependencies
+
+2. Install dependencies:
    ```bash
-   # Adapt to your package manager / runtime
    npm install
    ```
-4. Run locally
+
+3. Start the server:
    ```bash
+   npm start
+   # or for development with auto-restart:
    npm run dev
    ```
 
-## Scripts
+The server will start on `http://localhost:3000`
 
-Common commands (adjust to your project):
+## 📚 API Endpoints
 
-- `npm run dev`: Start the development server
-- `npm run build`: Build for production
-- `npm test`: Run tests
-- `npm run lint`: Run linter
+### Directory Operations
 
-## Project Structure
+#### List Root Directory
+```http
+GET /directory
+```
+Returns a JSON array of files and folders in the root Storage directory.
+
+**Response:**
+```json
+[
+  {"name": "cat3.png", "isDirectory": false},
+  {"name": "images", "isDirectory": true},
+  {"name": "document.pdf", "isDirectory": false}
+]
+```
+
+#### List Subdirectory
+```http
+GET /directory/:dirname
+```
+Returns files and folders in the specified subdirectory.
+
+**Example:** `GET /directory/images`
+
+### File Operations
+
+#### Upload File
+```http
+POST /files/:filename
+```
+Uploads a file to the storage directory.
+
+**Example:** `POST /files/myfile.txt`
+
+#### Download/View File
+```http
+GET /files/:filename
+```
+Downloads or views a file.
+
+**Query Parameters:**
+- `action=download` - Forces file download with attachment header
+
+**Example:** `GET /files/image.jpg?action=download`
+
+#### Rename File
+```http
+PATCH /files/:filename
+```
+Renames a file or folder.
+
+**Request Body:**
+```json
+{
+  "newFilename": "newname.txt"
+}
+```
+
+#### Delete File
+```http
+DELETE /files/:filename
+```
+Deletes a file or folder (recursively for directories).
+
+## 📁 Project Structure
 
 ```
-project/
-├─ src/            # Application source code
-├─ public/         # Static assets
-├─ scripts/        # Utility scripts
-├─ tests/          # Test files
-└─ README.md       # This mini doc
+MiniDoc/
+├── app.js              # Main Express server
+├── Storage/            # File storage directory
+│   ├── images/         # Image files
+│   ├── cat3.png
+│   ├── document.pdf
+│   └── video.mp4
+├── package.json
+└── README.md
 ```
 
-Update the directories above to match your actual layout.
+## 🔧 Configuration
 
-## Configuration
+- **Port**: 3000 (default)
+- **Storage Path**: `./Storage/` (relative to app.js)
+- **CORS**: Enabled for all origins
+- **File Upload**: Stream-based for large files
 
-- Environment variables: create a `.env` file (never commit secrets)
-- Example:
-  ```bash
-  PORT=3000
-  API_BASE_URL=http://localhost:3000
-  ```
+## 💡 Usage Examples
 
-## Usage
+### List directory contents
+```bash
+curl http://localhost:3000/directory
+```
 
-- Access the app at `http://localhost:3000` after running in dev mode
-- Build artifacts output to `dist/` (or your configured directory)
+### Upload a file
+```bash
+curl -X POST -F "file=@example.txt" http://localhost:3000/files/example.txt
+```
 
-## Contributing
+### Download a file
+```bash
+curl http://localhost:3000/files/example.txt
+```
 
-1. Create a feature branch
-2. Commit with clear messages
-3. Open a Pull Request with context and screenshots if UI changes
+### Force download
+```bash
+curl "http://localhost:3000/files/example.txt?action=download"
+```
 
-## Troubleshooting
+### Rename a file
+```bash
+curl -X PATCH -H "Content-Type: application/json" \
+  -d '{"newFilename":"newname.txt"}' \
+  http://localhost:3000/files/example.txt
+```
 
-- Delete `node_modules` and reinstall if dependency issues occur
-- Clear caches: `npm cache clean --force`
-- Ensure versions match the prerequisites
+### Delete a file
+```bash
+curl -X DELETE http://localhost:3000/files/example.txt
+```
 
-## License
+## 🐛 Troubleshooting
 
-Add your license information here (e.g., MIT).
+### Common Issues
 
+1. **Port already in use**
+   ```bash
+   # Kill process using port 3000
+   npx kill-port 3000
+   ```
 
+2. **Storage directory not found**
+   - Ensure `Storage/` directory exists in the project root
+   - Check file permissions
+
+3. **CORS errors**
+   - CORS is enabled by default
+   - If issues persist, check client-side configuration
+
+### Error Responses
+
+The API returns appropriate HTTP status codes:
+- `200` - Success
+- `404` - File/Directory not found
+- `500` - Server error
+
+Error response format:
+```json
+{
+  "message": "Error description"
+}
+```
+
+## 🔄 Development
+
+- Use `npm run dev` for development with nodemon auto-restart
+- The server serves files from the `Storage/` directory
+- All file operations are relative to the Storage folder
+- Supports both files and directories
+
+## 📝 License
+
+ISC
+
+---
+
+## 🎯 Quick Start Summary
+
+1. `npm install` - Install dependencies
+2. `npm start` - Start server on port 3000
+3. `curl http://localhost:3000/directory` - Test API
+4. Upload, download, rename, and delete files via REST endpoints
