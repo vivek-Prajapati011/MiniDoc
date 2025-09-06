@@ -1,54 +1,81 @@
 import express from "express";
+import cors from "cors";
 import { createWriteStream } from "fs";
 import { readdir, rename, rm, stat } from "fs/promises";
-import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Fix __dirname for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+const PORT = 3000;
 
 app.use(express.json());
 app.use(cors());
 
-// Read directory contents - handle both root and subdirectories
+const STORAGE_PATH = path.join(__dirname, "Storage");
+
+// ========== 📂 Directory Routes ==========
+
+// Root directory route
 app.get("/directory", async (req, res) => {
   try {
-    const fullDirPath = `./Storage/`;
-    const filesList = await readdir(fullDirPath);
+    const filesList = await readdir(STORAGE_PATH);
     const resData = [];
+
     for (const item of filesList) {
-      const stats = await stat(`${fullDirPath}/${item}`);
+      const stats = await stat(path.join(STORAGE_PATH, item));
       resData.push({ name: item, isDirectory: stats.isDirectory() });
     }
+
     res.json(resData);
   } catch (err) {
     res.status(404).json({ message: err.message });
   }
 });
 
-app.get("/directory/:dirname", async (req, res) => {
+// Multi-level directory route using Express 5 wildcard syntax
+app.get("/directory/*path", async (req, res) => {
   try {
-    const { dirname } = req.params;
-    const fullDirPath = `./Storage/${dirname}`;
+    // req.params.path is an array of path segments
+    const segs = req.params.path || [];
+    const wildcardPath = Array.isArray(segs) ? segs.join("/") : segs;
+
+    const fullDirPath = path.join(STORAGE_PATH, wildcardPath);
+
     const filesList = await readdir(fullDirPath);
     const resData = [];
+
     for (const item of filesList) {
-      const stats = await stat(`${fullDirPath}/${item}`);
+      const stats = await stat(path.join(fullDirPath, item));
       resData.push({ name: item, isDirectory: stats.isDirectory() });
     }
+
     res.json(resData);
   } catch (err) {
     res.status(404).json({ message: err.message });
   }
 });
 
-// Upload file
-app.post("/files/:filename", (req, res) => {
+// ========== 📄 File Routes ==========
+
+// Upload file (supports nested paths like /files/folder/sub/file.txt)
+app.post("/files/*path", (req, res) => {
   try {
-    const { filename } = req.params;
-    const writeStream = createWriteStream(`./Storage/${filename}`);
+    const segs = req.params.path || [];
+    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+
+    const fullPath = path.join(STORAGE_PATH, relPath);
+
+    const writeStream = createWriteStream(fullPath);
     req.pipe(writeStream);
+
     req.on("end", () => {
       res.json({ message: "File Uploaded" });
     });
+
     req.on("error", (err) => {
       res.status(500).json({ message: err.message });
     });
@@ -57,41 +84,56 @@ app.post("/files/:filename", (req, res) => {
   }
 });
 
-// Get/Download file
-app.get("/files/:filename", (req, res) => {
+// Download/Get file (multi-level support)
+app.get("/files/*path", (req, res) => {
   try {
-    const { filename } = req.params;
+    const segs = req.params.path || [];
+    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+
+    const fullPath = path.join(STORAGE_PATH, relPath);
+
     if (req.query.action === "download") {
       res.set("Content-Disposition", "attachment");
     }
-    res.sendFile(`${import.meta.dirname}/Storage/${filename}`);
+
+    res.sendFile(fullPath);
   } catch (err) {
     res.status(404).json({ message: err.message });
   }
 });
 
-// Rename file
-app.patch("/files/:filename", async (req, res) => {
+// Rename file/folder
+app.patch("/files/*path", async (req, res) => {
   try {
-    const { filename } = req.params;
-    await rename(`./Storage/${filename}`, `./Storage/${req.body.newFilename}`);
+    const segs = req.params.path || [];
+    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+
+    const oldPath = path.join(STORAGE_PATH, relPath);
+    const newPath = path.join(STORAGE_PATH, req.body.newFilename);
+
+    await rename(oldPath, newPath);
     res.json({ message: "Renamed" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// Delete file
-app.delete("/files/:filename", async (req, res) => {
+// Delete file/folder (multi-level)
+app.delete("/files/*path", async (req, res) => {
   try {
-    const { filename } = req.params;
-    await rm(`./Storage/${filename}`, { recursive: true });
-    res.json({ message: "File Deleted Successfully" });
+    const segs = req.params.path || [];
+    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+
+    const fullPath = path.join(STORAGE_PATH, relPath);
+
+    await rm(fullPath, { recursive: true, force: true });
+    res.json({ message: "Deleted Successfully" });
   } catch (err) {
     res.status(404).json({ message: err.message });
   }
 });
 
-app.listen(3000, () => {
-  console.log(`Server Started on port 3000`);
+// ========== 🚀 Start Server ==========
+app.listen(PORT, () => {
+  console.log(`✅ Server started on http://localhost:${PORT}`);
 });
