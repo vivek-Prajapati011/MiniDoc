@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { createWriteStream } from "fs";
-import { readdir, rename, rm, stat } from "fs/promises";
+import { readdir, rename, rm, stat, mkdir } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -36,6 +36,7 @@ app.get("/directory", async (req, res) => {
   }
 });
 
+
 // Multi-level directory route using Express 5 wildcard syntax
 app.get("/directory/*path", async (req, res) => {
   try {
@@ -58,6 +59,19 @@ app.get("/directory/*path", async (req, res) => {
     res.status(404).json({ message: err.message });
   }
 });
+
+app.post("/directory/*path", async (req,res) => {
+   const segs = req.params.path || [];
+  try {
+    const wildcardPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const fullDirPath = path.join(STORAGE_PATH, wildcardPath);
+    await mkdir(fullDirPath);
+    res.json({ message: "Directory Created" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+
+})
 
 // ========== 📄 File Routes ==========
 
