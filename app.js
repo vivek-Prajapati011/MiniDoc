@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
-import directoryRoutes from "./routes/directoryRoutes.js";
-import fileRoutes from "./routes/fileRoutes.js";
+import directoryRoutes from "./routes/directoryRoute.js";
+import fileRoutes from "./routes/fileRoute.js";
 
 const app = express();
 const PORT = 3000;
