@@ -15,11 +15,21 @@ const PORT = 3000;
 app.use(express.json());
 app.use(cors());
 
-const STORAGE_PATH = path.join(__dirname, "Storage");
+// Root storage directory
+const STORAGE_PATH = path.resolve(path.join(__dirname, "Storage"));
+
+// ✅ Utility: Securely resolve and validate path
+function getSafePath(relPath = "") {
+  const fullPath = path.resolve(path.join(STORAGE_PATH, relPath));
+  if (!fullPath.startsWith(STORAGE_PATH)) {
+    throw new Error("Invalid path (path traversal attempt detected)");
+  }
+  return fullPath;
+}
 
 // ========== 📂 Directory Routes ==========
 
-// Root directory route
+// List root directory
 app.get("/directory", async (req, res) => {
   try {
     const filesList = await readdir(STORAGE_PATH);
@@ -36,15 +46,12 @@ app.get("/directory", async (req, res) => {
   }
 });
 
-
-// Multi-level directory route using Express 5 wildcard syntax
+// List multi-level directory
 app.get("/directory/*path", async (req, res) => {
   try {
-    // req.params.path is an array of path segments
     const segs = req.params.path || [];
-    const wildcardPath = Array.isArray(segs) ? segs.join("/") : segs;
-
-    const fullDirPath = path.join(STORAGE_PATH, wildcardPath);
+    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const fullDirPath = getSafePath(relPath);
 
     const filesList = await readdir(fullDirPath);
     const resData = [];
@@ -60,28 +67,31 @@ app.get("/directory/*path", async (req, res) => {
   }
 });
 
-app.post("/directory/*path", async (req,res) => {
-   const segs = req.params.path || [];
+// Create directory (supports nested)
+app.post("/directory/*path", async (req, res) => {
   try {
-    const wildcardPath = Array.isArray(segs) ? segs.join("/") : segs;
-    const fullDirPath = path.join(STORAGE_PATH, wildcardPath);
-    await mkdir(fullDirPath);
+    const segs = req.params.path || [];
+    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const fullDirPath = getSafePath(relPath);
+
+    await mkdir(fullDirPath, { recursive: true });
     res.json({ message: "Directory Created" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-
-})
+});
 
 // ========== 📄 File Routes ==========
 
-// Upload file (supports nested paths like /files/folder/sub/file.txt)
-app.post("/files/*path", (req, res) => {
+// Upload file
+app.post("/files/*path", async (req, res) => {
   try {
     const segs = req.params.path || [];
     const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const fullPath = getSafePath(relPath);
 
-    const fullPath = path.join(STORAGE_PATH, relPath);
+    // Ensure parent directory exists
+    await mkdir(path.dirname(fullPath), { recursive: true });
 
     const writeStream = createWriteStream(fullPath);
     req.pipe(writeStream);
@@ -98,16 +108,15 @@ app.post("/files/*path", (req, res) => {
   }
 });
 
-// Download/Get file (multi-level support)
+// Download/Get file
 app.get("/files/*path", (req, res) => {
   try {
     const segs = req.params.path || [];
     const relPath = Array.isArray(segs) ? segs.join("/") : segs;
-
-    const fullPath = path.join(STORAGE_PATH, relPath);
+    const fullPath = getSafePath(relPath);
 
     if (req.query.action === "download") {
-      res.set("Content-Disposition", "attachment");
+      res.set("Content-Disposition", `attachment; filename="${path.basename(fullPath)}"`);
     }
 
     res.sendFile(fullPath);
@@ -122,8 +131,8 @@ app.patch("/files/*path", async (req, res) => {
     const segs = req.params.path || [];
     const relPath = Array.isArray(segs) ? segs.join("/") : segs;
 
-    const oldPath = path.join(STORAGE_PATH, relPath);
-    const newPath = path.join(STORAGE_PATH, req.body.newFilename);
+    const oldPath = getSafePath(relPath);
+    const newPath = getSafePath(req.body.newFilename);
 
     await rename(oldPath, newPath);
     res.json({ message: "Renamed" });
@@ -132,13 +141,12 @@ app.patch("/files/*path", async (req, res) => {
   }
 });
 
-// Delete file/folder (multi-level)
+// Delete file/folder
 app.delete("/files/*path", async (req, res) => {
   try {
     const segs = req.params.path || [];
     const relPath = Array.isArray(segs) ? segs.join("/") : segs;
-
-    const fullPath = path.join(STORAGE_PATH, relPath);
+    const fullPath = getSafePath(relPath);
 
     await rm(fullPath, { recursive: true, force: true });
     res.json({ message: "Deleted Successfully" });
