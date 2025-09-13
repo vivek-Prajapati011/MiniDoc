@@ -1,0 +1,27 @@
+[
+  {
+    "id": 10,
+    "name": "cat3.png",
+    "dirid": 321,
+    "size": 5344
+  },
+  {
+    "id": 13,
+    "name": "cat3.png",
+    "dirid": 3231,
+    "size": 5344
+  },
+  {
+    "id": 15,
+    "name": "cat3.png",
+    "dirid": 3221,
+    "size": 5344
+  },
+  {
+    "id": "d6a4859f-3107-4422-8d08-75370f4c44c8",
+    "name": "myFile.txt",
+    "size": 65244,
+    "dirId": ".",
+    "storedName": "d6a4859f-3107-4422-8d08-75370f4c44c8.txt"
+  }
+]
