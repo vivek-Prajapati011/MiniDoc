@@ -5,7 +5,10 @@ import { getSafePath, STORAGE_PATH } from "../utils/pathUtils.js";
 
 const router = express.Router();
 
-// List root directory
+/**
+ * List root directory
+ * GET /directory/
+ */
 router.get("/", async (req, res) => {
   try {
     const filesList = await readdir(STORAGE_PATH);
@@ -22,19 +25,26 @@ router.get("/", async (req, res) => {
   }
 });
 
-// List multi-level directory
-router.get("/*path", async (req, res) => {
+/**
+ * List nested directory
+ * Example: GET /directory/foo/bar
+ */
+router.get("/*", async (req, res) => {
   try {
-    const segs = req.params.path || [];
-    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const relPath = req.params[0] || ""; // wildcard capture
     const fullDirPath = getSafePath(relPath);
+
+    const stats = await stat(fullDirPath);
+    if (!stats.isDirectory()) {
+      return res.status(400).json({ message: "Not a directory" });
+    }
 
     const filesList = await readdir(fullDirPath);
     const resData = [];
 
     for (const item of filesList) {
-      const stats = await stat(path.join(fullDirPath, item));
-      resData.push({ name: item, isDirectory: stats.isDirectory() });
+      const itemStats = await stat(path.join(fullDirPath, item));
+      resData.push({ name: item, isDirectory: itemStats.isDirectory() });
     }
 
     res.json(resData);
@@ -43,15 +53,17 @@ router.get("/*path", async (req, res) => {
   }
 });
 
-// Create directory (supports nested)
-router.post("/*path", async (req, res) => {
+/**
+ * Create nested directory
+ * Example: POST /directory/foo/bar
+ */
+router.post("/*", async (req, res) => {
   try {
-    const segs = req.params.path || [];
-    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const relPath = req.params[0] || "";
     const fullDirPath = getSafePath(relPath);
 
     await mkdir(fullDirPath, { recursive: true });
-    res.json({ message: "Directory Created" });
+    res.json({ message: "Directory Created", path: relPath });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
