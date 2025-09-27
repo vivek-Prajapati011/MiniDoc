@@ -1,25 +1,36 @@
 // routes/userRoute.js
 import express from "express";
-import { writeFile } from "fs/promises";
+import { writeFile, readFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import usersData from "../usersDB.json" with { type: "json" };
+import checkAuth from "../middleware/auth.js";
 
 const router = express.Router();
 const DB_PATH = path.join(process.cwd(), "usersDB.json");
 
-// save users helper
+// Load users data helper
+async function loadUsersData() {
+  try {
+    const data = await readFile(DB_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+// Save users helper
 async function saveUsers(data) {
   await writeFile(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-// ✅ Register (already there)
+// ✅ Register
 router.post("/register", async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: "All fields required" });
   }
 
+  const usersData = await loadUsersData();
   const exists = usersData.find((u) => u.email === email);
   if (exists) return res.status(400).json({ error: "User already exists" });
 
@@ -27,7 +38,7 @@ router.post("/register", async (req, res) => {
     id: crypto.randomUUID(),
     name,
     email,
-    password, // ⚠ plain text for now
+    password,
     rootDirId: crypto.randomUUID()
   };
 
@@ -38,8 +49,9 @@ router.post("/register", async (req, res) => {
 });
 
 // ✅ Login
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
+  const usersData = await loadUsersData();
   const user = usersData.find(
     (u) => u.email === email && u.password === password
   );
