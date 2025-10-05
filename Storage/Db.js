@@ -6,3 +6,9 @@ const client = new MongoClient("mongodb://127.0.0.1:27017/storageApp");
   const db = client.db();
   return db
 }
+
+process.on("SIGINT", async() =>{
+  await client.close()
+  console.log("client diconnected")
+  process.exit(0)
+})
