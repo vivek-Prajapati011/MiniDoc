@@ -1,27 +1,10 @@
 // routes/userRoute.js
 import express from "express";
-import { writeFile, readFile } from "fs/promises";
-import path from "path";
 import crypto from "crypto";
+import { db } from "../db.js"; // ✅ import Mongo connection
 import checkAuth from "../middleware/auth.js";
 
 const router = express.Router();
-const DB_PATH = path.join(process.cwd(), "usersDB.json");
-
-// Load users data helper
-async function loadUsersData() {
-  try {
-    const data = await readFile(DB_PATH, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    return [];
-  }
-}
-
-// Save users helper
-async function saveUsers(data) {
-  await writeFile(DB_PATH, JSON.stringify(data, null, 2));
-}
 
 // ✅ Register
 router.post("/register", async (req, res) => {
@@ -30,37 +13,44 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ error: "All fields required" });
   }
 
-  const usersData = await loadUsersData();
-  const exists = usersData.find((u) => u.email === email);
-  if (exists) return res.status(400).json({ error: "User already exists" });
+  try {
+    const usersCol = db.collection("users");
 
-  const newUser = {
-    id: crypto.randomUUID(),
-    name,
-    email,
-    password,
-    rootDirId: crypto.randomUUID()
-  };
+    // check if user already exists
+    const exists = await usersCol.findOne({ email });
+    if (exists) return res.status(400).json({ error: "User already exists" });
 
-  usersData.push(newUser);
-  await saveUsers(usersData);
+    // create user
+    const newUser = {
+      id: crypto.randomUUID(),
+      name,
+      email,
+      password, // ⚠️ ideally hash with bcrypt
+      rootDirId: crypto.randomUUID(),
+    };
 
-  res.json({ message: "Registered", user: newUser });
+    await usersCol.insertOne(newUser);
+
+    res.json({ message: "Registered", user: newUser });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ✅ Login
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  const usersData = await loadUsersData();
-  const user = usersData.find(
-    (u) => u.email === email && u.password === password
-  );
+  try {
+    const usersCol = db.collection("users");
 
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    const user = await usersCol.findOne({ email, password });
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-  // set cookie for session
-  res.cookie("uid", user.id, { httpOnly: true });
-  res.json({ message: "Login successful", user });
+    res.cookie("uid", user.id, { httpOnly: true });
+    res.json({ message: "Login successful", user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ✅ Logout
