@@ -1,7 +1,7 @@
 // routes/userRoute.js
 import express from "express";
 import crypto from "crypto";
-import { db } from "../db.js"; // ✅ import Mongo connection
+import { connectDb } from "../Storage/Db.js";  // ✅ import Mongo connection
 import checkAuth from "../middleware/auth.js";
 
 const router = express.Router();
