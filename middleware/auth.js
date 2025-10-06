@@ -1,6 +1,6 @@
 // middleware/auth.js
 // middleware/auth.js
-import { db } from "../db.js"; // ✅ import db connection
+import { connectDb } from "../Storage/Db.js"; // ✅ import db connection
 
 export default async function checkAuth(req, res, next) {
   try {
