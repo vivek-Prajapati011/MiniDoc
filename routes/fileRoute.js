@@ -1,15 +1,16 @@
+// routes/fileRoute.js
 import express from "express";
 import { createWriteStream, statSync } from "fs";
 import { rename, rm, mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { getSafePath } from "../utils/pathUtils.js";
 import checkAuth from "../middleware/auth.js";
-import { getSafePath, STORAGE_PATH } from "../utils/pathUtils.js";
 
 const router = express.Router();
 const DB_PATH = path.join(process.cwd(), "filedb", "files.json");
 
-// ===== Helpers =====
+// Helpers
 async function readDB() {
   try {
     const data = await readFile(DB_PATH, "utf-8");
@@ -18,102 +19,113 @@ async function readDB() {
     return [];
   }
 }
+
 async function writeDB(data) {
   await writeFile(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-// ===== Upload file =====
-router.post("/*path", checkAuth, async (req, res) => {
-  try {
-    const userRoot = req.user.rootDirId;
-    const segs = req.params.path || [];
-    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+// ✅ All routes protected
+router.use(checkAuth);
 
-    const fullPath = getSafePath(path.join(userRoot, relPath));
-    await mkdir(path.dirname(fullPath), { recursive: true });
+// ===== Upload file =====
+router.post("/:filename", async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const userDir = path.join("Storage", req.user.id); // ✅ user-specific folder
+    await mkdir(userDir, { recursive: true });
 
     const fileId = crypto.randomUUID();
-    const ext = path.extname(fullPath);
+    const ext = path.extname(filename);
     const storedName = `${fileId}${ext}`;
-    const storedPath = path.join(path.dirname(fullPath), storedName);
+    const storedPath = path.join(userDir, storedName);
 
     const writeStream = createWriteStream(storedPath);
     req.pipe(writeStream);
 
     req.on("end", async () => {
-      try {
-        const stats = statSync(storedPath);
+      const stats = statSync(storedPath);
+      const fileDB = await readDB();
 
-        const fileDB = await readDB();
-        fileDB.push({
-          id: fileId,
-          name: path.basename(fullPath),
-          size: stats.size,
-          dirId: path.dirname(relPath) || "root",
-          storedName,
-          owner: req.user.id, // ✅ track user
-        });
-        await writeDB(fileDB);
+      fileDB.push({
+        id: fileId,
+        name: filename,
+        storedName,
+        size: stats.size,
+        userId: req.user.id, // ✅ owner reference
+      });
 
-        res.json({ message: "File Uploaded" });
-      } catch (e) {
-        res.status(500).json({ message: e.message });
-      }
+      await writeDB(fileDB);
+
+      res.json({
+        message: "File Uploaded",
+        file: { id: fileId, name: filename, size: stats.size },
+      });
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// ===== Get / Download file =====
-router.get("/*path", checkAuth, async (req, res) => {
+// ===== Download file =====
+router.get("/:filename", async (req, res) => {
   try {
-    const userRoot = req.user.rootDirId;
-    const segs = req.params.path || [];
-    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
-    const fullPath = getSafePath(path.join(userRoot, relPath));
+    const { filename } = req.params;
+    const fileDB = await readDB();
+    const fileMeta = fileDB.find(
+      (f) => f.name === filename && f.userId === req.user.id
+    );
+    if (!fileMeta) return res.status(404).json({ message: "File not found" });
 
-    if (req.query.action === "download") {
-      res.set("Content-Disposition", `attachment; filename="${path.basename(fullPath)}"`);
-    }
+    const storedPath = getSafePath(
+      path.join("Storage", req.user.id, fileMeta.storedName)
+    );
 
-    res.sendFile(fullPath);
-  } catch {
-    res.status(404).json({ message: "File not found" });
+    res.sendFile(storedPath);
+  } catch (err) {
+    res.status(404).json({ message: err.message });
   }
 });
 
-// ===== Rename =====
-router.patch("/*path", checkAuth, async (req, res) => {
+// ===== Rename file =====
+router.patch("/:filename", async (req, res) => {
   try {
-    const userRoot = req.user.rootDirId;
-    const segs = req.params.path || [];
-    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
-
-    const fullPath = getSafePath(path.join(userRoot, relPath));
+    const { filename } = req.params;
     const { newName } = req.body;
-    if (!newName) return res.status(400).json({ message: "New name required" });
+    const fileDB = await readDB();
+    const fileMeta = fileDB.find(
+      (f) => f.name === filename && f.userId === req.user.id
+    );
+    if (!fileMeta) return res.status(404).json({ message: "File not found" });
 
-    const newPath = path.join(path.dirname(fullPath), newName);
-    await rename(fullPath, newPath);
-
-    res.json({ message: "File renamed" });
+    fileMeta.name = newName;
+    await writeDB(fileDB);
+    res.json({ message: "Renamed", newName });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// ===== Delete =====
-router.delete("/*path", checkAuth, async (req, res) => {
+// ===== Delete file =====
+router.delete("/:filename", async (req, res) => {
   try {
-    const userRoot = req.user.rootDirId;
-    const segs = req.params.path || [];
-    const relPath = Array.isArray(segs) ? segs.join("/") : segs;
+    const { filename } = req.params;
+    const fileDB = await readDB();
+    const index = fileDB.findIndex(
+      (f) => f.name === filename && f.userId === req.user.id
+    );
+    if (index === -1)
+      return res.status(404).json({ message: "File not found" });
 
-    const fullPath = getSafePath(path.join(userRoot, relPath));
-    await rm(fullPath, { force: true, recursive: true });
+    const fileMeta = fileDB[index];
+    const storedPath = getSafePath(
+      path.join("Storage", req.user.id, fileMeta.storedName)
+    );
 
-    res.json({ message: "Deleted successfully" });
+    await rm(storedPath, { force: true });
+    fileDB.splice(index, 1);
+    await writeDB(fileDB);
+
+    res.json({ message: "Deleted Successfully" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
