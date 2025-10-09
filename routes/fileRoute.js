@@ -10,7 +10,7 @@ import checkAuth from "../middleware/auth.js";
 const router = express.Router();
 const DB_PATH = path.join(process.cwd(), "filedb", "files.json");
 
-// Helpers
+// ---------- Helpers ----------
 async function readDB() {
   try {
     const data = await readFile(DB_PATH, "utf-8");
@@ -19,19 +19,20 @@ async function readDB() {
     return [];
   }
 }
-
 async function writeDB(data) {
   await writeFile(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-// ✅ All routes protected
+// ---------- Protect all routes ----------
 router.use(checkAuth);
 
-// ===== Upload file =====
-router.post("/:filename", async (req, res) => {
+// =====================================================
+// ✅ Upload File  →  POST /files/{filename}
+// =====================================================
+router.post("/{filename}", async (req, res) => {
   try {
     const { filename } = req.params;
-    const userDir = path.join("Storage", req.user.id); // ✅ user-specific folder
+    const userDir = path.join("Storage", req.user.id);
     await mkdir(userDir, { recursive: true });
 
     const fileId = crypto.randomUUID();
@@ -51,11 +52,10 @@ router.post("/:filename", async (req, res) => {
         name: filename,
         storedName,
         size: stats.size,
-        userId: req.user.id, // ✅ owner reference
+        userId: req.user.id,
       });
 
       await writeDB(fileDB);
-
       res.json({
         message: "File Uploaded",
         file: { id: fileId, name: filename, size: stats.size },
@@ -66,8 +66,10 @@ router.post("/:filename", async (req, res) => {
   }
 });
 
-// ===== Download file =====
-router.get("/:filename", async (req, res) => {
+// =====================================================
+// ✅ Download File  →  GET /files/{filename}
+// =====================================================
+router.get("/{filename}", async (req, res) => {
   try {
     const { filename } = req.params;
     const fileDB = await readDB();
@@ -86,11 +88,14 @@ router.get("/:filename", async (req, res) => {
   }
 });
 
-// ===== Rename file =====
-router.patch("/:filename", async (req, res) => {
+// =====================================================
+// ✅ Rename File  →  PATCH /files/{filename}
+// =====================================================
+router.patch("/{filename}", async (req, res) => {
   try {
     const { filename } = req.params;
     const { newName } = req.body;
+
     const fileDB = await readDB();
     const fileMeta = fileDB.find(
       (f) => f.name === filename && f.userId === req.user.id
@@ -99,14 +104,17 @@ router.patch("/:filename", async (req, res) => {
 
     fileMeta.name = newName;
     await writeDB(fileDB);
+
     res.json({ message: "Renamed", newName });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// ===== Delete file =====
-router.delete("/:filename", async (req, res) => {
+// =====================================================
+// ✅ Delete File  →  DELETE /files/{filename}
+// =====================================================
+router.delete("/{filename}", async (req, res) => {
   try {
     const { filename } = req.params;
     const fileDB = await readDB();
