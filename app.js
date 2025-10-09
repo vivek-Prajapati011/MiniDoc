@@ -2,52 +2,70 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { connectDb } from "./Storage/Db.js";
 import directoryRoutes from "./routes/directoryRoute.js";
 import fileRoutes from "./routes/fileRoute.js";
 import userRoutes from "./routes/userRoute.js";
-import { connectDb } from "./Storage/Db.js";
 
-try {
-  const db = await connectDb();
+const app = express();
+const PORT = 3000;
 
-  const app = express();
-  const PORT = 3000;
+async function startServer() {
+  try {
+    // ✅ Connect to MongoDB once at startup
+    const db = await connectDb();
+    
 
-  // CORS configuration
+    // ✅ Middleware
+    app.use(express.json());
+    app.use(cookieParser());
+
   app.use(
-    cors({
-      origin: "http://localhost:5173", // Your React dev server
-      credentials: true, // Important for cookies
-    })
-  );
-
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use((req,res, next) => {
-    req.db = db
-    next()
+  cors({
+    origin: [
+      "http://localhost:5173",       // for local development
+      "http://192.168.1.9:5173"      // for LAN/mobile access
+    ],
+    credentials: true, // allow cookies
   })
+);
 
-  // Mount Routers
-  app.use("/directory", directoryRoutes);
-  app.use("/files", fileRoutes);
-  app.use("/users", userRoutes);
 
-  // Error handling middleware
-  app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: "Something went wrong!" });
-  });
+    // ✅ Attach DB instance to all requests
+    app.use((req, res, next) => {
+      req.db = db;
+      next();
+    });
 
-  // 404 handler
-  app.use((req, res) => {
-    res.status(404).json({ error: "Route not found" });
-  });
+    // ✅ Mount routes
+    app.use("/directory", directoryRoutes);
+    app.use("/files", fileRoutes);
+    app.use("/users", userRoutes);
 
-  app.listen(PORT, () => {
-    console.log(`✅ Server started on http://localhost:${PORT}`);
-  });
-} catch (error) {
-  console.log("could not connect to db");
-  console.log(error);
+    // ✅ Default route
+    app.get("/", (req, res) => {
+      res.json({ message: "Welcome to MiniDoc API" });
+    });
+
+    // ✅ 404 handler
+    app.use((req, res) => {
+      res.status(404).json({ error: "Route not found" });
+    });
+
+    // ✅ Global error handler
+    app.use((err, req, res, next) => {
+      console.error("❌ Server Error:", err.stack);
+      res.status(500).json({ error: "Something went wrong!" });
+    });
+
+    // ✅ Start server
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error("❌ Failed to start server:", err.message);
+  }
 }
+
+// ✅ Start the server
+startServer();
