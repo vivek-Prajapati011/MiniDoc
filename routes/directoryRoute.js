@@ -1,59 +1,57 @@
 // routes/directoryRoute.js
 import express from "express";
-import { mkdir, rm } from "fs/promises";
 import path from "path";
+import { connectDb } from "../Storage/Db.js";
 import checkAuth from "../middleware/auth.js";
 import { getSafePath } from "../utils/pathUtils.js";
-import { connectDb } from "../Storage/Db.js";
+import { mkdir, rm } from "fs/promises";
 
 const router = express.Router();
 
 /* 
-   ✅ Get all root directories for the logged-in user
-   GET /directory/
- */
-router.get("/", checkAuth, async (req, res) => {
+  ✅ Get all items (files + folders) in a directory
+  Express 5 syntax: /{*path} — replaces :path(*)
+*/
+router.get("/{*path}", checkAuth, async (req, res) => {
   try {
+    // Express 5 wildcard gives array if multiple levels — normalize to string
+    const dirPath = Array.isArray(req.params.path)
+      ? req.params.path.join("/")
+      : req.params.path || "root";
+
     const db = await connectDb();
     const directories = db.collection("directories");
+    const files = db.collection("files");
 
-    const rootDirs = await directories
-      .find({ userId: req.user.id, parentId: "root" })
+    // ✅ Fetch folders
+    const dirs = await directories
+      .find({ userId: req.user.id, parentId: dirPath })
+      .project({ _id: 0, name: 1 })
       .toArray();
 
-    res.json(rootDirs);
+    // ✅ Fetch files
+    const fileList = await files
+      .find({ userId: req.user.id, dirPath: dirPath === "root" ? "" : dirPath })
+      .project({ _id: 0, name: 1 })
+      .toArray();
+
+    // ✅ Combine both
+    const items = [
+      ...dirs.map((d) => ({ name: d.name, isDirectory: true })),
+      ...fileList.map((f) => ({ name: f.name, isDirectory: false })),
+    ];
+
+    res.json(items);
   } catch (err) {
-    console.error("Error listing root directories:", err);
+    console.error("Error listing directory items:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
 /* 
-   ✅ Get nested directories under a specific directory
-   GET /directory/{dirId}
- */
-router.get("/{dirId}", checkAuth, async (req, res) => {
-  try {
-    const { dirId } = req.params;
-    const db = await connectDb();
-    const directories = db.collection("directories");
-
-    const subDirs = await directories
-      .find({ userId: req.user.id, parentId: dirId })
-      .toArray();
-
-    res.json(subDirs);
-  } catch (err) {
-    console.error("Error fetching subdirectories:", err);
-    res.status(500).json({ message: err.message });
-  }
-});
-
-/* 
-   ✅ Create a new directory
-   POST /directory/
-   Body: { name, parentId (optional) }
- */
+  ✅ Create new directory
+  POST /directory/
+*/
 router.post("/", checkAuth, async (req, res) => {
   try {
     const { name, parentId = "root" } = req.body;
@@ -69,103 +67,46 @@ router.post("/", checkAuth, async (req, res) => {
       createdAt: new Date(),
     };
 
-    const result = await directories.insertOne(newDir);
+    await directories.insertOne(newDir);
 
-    // Also create physical folder (optional)
-    const userDirPath = getSafePath(path.join("Storage", req.user.id, name));
-    await mkdir(userDirPath, { recursive: true });
+    // ✅ Also create the physical folder
+    const folderPath = getSafePath(path.join("Storage", req.user.id, parentId, name));
+    await mkdir(folderPath, { recursive: true });
 
-    res.json({ message: "Directory created", id: result.insertedId, ...newDir });
+    res.json({ message: "✅ Directory created", name });
   } catch (err) {
-    console.error("Error creating directory:", err);
+    console.error("Create folder error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
 /* 
-   ✅ Rename a directory
-   PATCH /directory/{dirId}
-   Body: { newName }
- */
-router.patch("/{dirId}", checkAuth, async (req, res) => {
+  ✅ Delete a directory and all its contents
+  DELETE /directory/{*path}
+*/
+router.delete("/{*path}", checkAuth, async (req, res) => {
   try {
-    const { dirId } = req.params;
-    const { newName } = req.body;
-    if (!newName) return res.status(400).json({ message: "New name required" });
+    const dirPath = Array.isArray(req.params.path)
+      ? req.params.path.join("/")
+      : req.params.path;
 
-    const db = await connectDb();
-    const directories = db.collection("directories");
+    if (!dirPath) return res.status(400).json({ message: "Path required" });
 
-    const result = await directories.updateOne(
-      { _id: dirId, userId: req.user.id },
-      { $set: { name: newName } }
-    );
-
-    if (result.matchedCount === 0)
-      return res.status(404).json({ message: "Directory not found" });
-
-    res.json({ message: "Renamed successfully" });
-  } catch (err) {
-    console.error("Error renaming directory:", err);
-    res.status(500).json({ message: err.message });
-  }
-});
-
-/* 
-   ✅ Recursively delete a directory and all its contents
-   DELETE /directory/{dirId}
- */
-router.delete("/{dirId}", checkAuth, async (req, res) => {
-  try {
-    const { dirId } = req.params;
     const db = await connectDb();
     const directories = db.collection("directories");
     const files = db.collection("files");
 
-    // 1️⃣ Find target directory
-    const target = await directories.findOne({ _id: dirId, userId: req.user.id });
-    if (!target) return res.status(404).json({ message: "Directory not found" });
+    // ✅ Delete from DB
+    await files.deleteMany({ userId: req.user.id, dirPath });
+    await directories.deleteMany({ userId: req.user.id, parentId: dirPath });
 
-    // 2️⃣ Recursive function to get all subdirectories
-    async function getAllSubDirs(parentId) {
-      const subDirs = await directories.find({ parentId, userId: req.user.id }).toArray();
-      let all = [...subDirs];
-      for (const dir of subDirs) {
-        const deeper = await getAllSubDirs(dir._id);
-        all = all.concat(deeper);
-      }
-      return all;
-    }
-
-    const allSubDirs = await getAllSubDirs(dirId);
-    const allDirIds = [dirId, ...allSubDirs.map((d) => d._id)];
-
-    // 3️⃣ Delete all files in those directories (from DB + Disk)
-    const userFiles = await files
-      .find({ dirId: { $in: allDirIds }, userId: req.user.id })
-      .toArray();
-
-    for (const f of userFiles) {
-      const filePath = getSafePath(path.join("Storage", req.user.id, f.storedName));
-      await rm(filePath, { force: true });
-    }
-
-    await files.deleteMany({ dirId: { $in: allDirIds }, userId: req.user.id });
-
-    // 4️⃣ Delete directories (from DB)
-    await directories.deleteMany({ _id: { $in: allDirIds }, userId: req.user.id });
-
-    // 5️⃣ Optionally remove folder from physical storage
-    const folderPath = getSafePath(path.join("Storage", req.user.id, target.name));
+    // ✅ Delete physical folder
+    const folderPath = getSafePath(path.join("Storage", req.user.id, dirPath));
     await rm(folderPath, { recursive: true, force: true });
 
-    res.json({
-      message: "Directory and all nested contents deleted successfully",
-      deletedDirectories: allDirIds.length,
-      deletedFiles: userFiles.length,
-    });
+    res.json({ message: "✅ Folder deleted successfully" });
   } catch (err) {
-    console.error("Recursive delete error:", err);
+    console.error("Delete folder error:", err);
     res.status(500).json({ message: err.message });
   }
 });
