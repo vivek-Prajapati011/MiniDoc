@@ -1,152 +1,194 @@
 // routes/fileRoute.js
 import express from "express";
-import { createWriteStream, statSync } from "fs";
-import { rename, rm, mkdir } from "fs/promises";
+import multer from "multer";
+import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { getSafePath } from "../utils/pathUtils.js";
 import checkAuth from "../middleware/auth.js";
+import { getSafePath } from "../utils/pathUtils.js";
 import { connectDb } from "../Storage/Db.js";
 
 const router = express.Router();
+const upload = multer({ dest: "tempUploads/" });
 
 // ✅ Protect all routes
 router.use(checkAuth);
 
-// ✅ Upload File → POST /files/{filename}
-router.post("/{filename}", async (req, res) => {
+/* ===========================================================
+   ✅ Upload File → POST /files/{*filepath}
+=========================================================== */
+router.post("/{*filepath}", upload.single("file"), async (req, res) => {
   try {
     const db = await connectDb();
     const filesCol = db.collection("files");
 
-    const { filename } = req.params;
-    const userDir = path.join("Storage", req.user.id);
-    await mkdir(userDir, { recursive: true });
+    // Normalize filepath
+    const filepath = Array.isArray(req.params.filepath)
+      ? req.params.filepath.join("/")
+      : req.params.filepath;
+
+    const filename = path.basename(filepath);
+    const dirPath = path.dirname(filepath) === "." ? "" : path.dirname(filepath);
+
+    const userDir = getSafePath(path.join("Storage", req.user.id, dirPath));
+    await fs.mkdir(userDir, { recursive: true });
 
     const fileId = crypto.randomUUID();
-    const ext = path.extname(filename);
+    const ext = path.extname(req.file.originalname);
     const storedName = `${fileId}${ext}`;
     const storedPath = path.join(userDir, storedName);
 
-    const writeStream = createWriteStream(storedPath);
-    req.pipe(writeStream);
+    // Move file from tempUploads → actual location
+    await fs.rename(req.file.path, storedPath);
 
-    req.on("end", async () => {
-      const stats = statSync(storedPath);
+    const fileDoc = {
+      id: fileId,
+      name: filename,
+      storedName,
+      dirPath,
+      userId: req.user.id,
+      size: req.file.size,
+      createdAt: new Date(),
+    };
 
-      const fileDoc = {
-        id: fileId,
-        name: filename,
-        storedName,
-        size: stats.size,
-        userId: req.user.id,
-        dirId: req.body.dirId || "root", // optional parent directory reference
-        createdAt: new Date(),
-      };
+    await filesCol.insertOne(fileDoc);
 
-      await filesCol.insertOne(fileDoc);
-
-      res.json({
-        message: "File uploaded successfully",
-        file: { id: fileId, name: filename, size: stats.size },
-      });
+    res.json({
+      message: "✅ File uploaded successfully",
+      file: { id: fileId, name: filename, size: req.file.size },
     });
   } catch (err) {
+    console.error("Upload error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ Download File → GET /files/{filename}
-router.get("/{filename}", async (req, res) => {
+/* ===========================================================
+   ✅ Download or Open File → GET /files/{*filepath}?action=open|download
+=========================================================== */
+router.get("/{*filepath}", async (req, res) => {
   try {
     const db = await connectDb();
     const filesCol = db.collection("files");
 
-    const { filename } = req.params;
+    const filepath = Array.isArray(req.params.filepath)
+      ? req.params.filepath.join("/")
+      : req.params.filepath;
+
+    const filename = path.basename(filepath);
+    const dirPath = path.dirname(filepath) === "." ? "" : path.dirname(filepath);
+
     const fileMeta = await filesCol.findOne({
       name: filename,
+      dirPath,
       userId: req.user.id,
     });
 
     if (!fileMeta) return res.status(404).json({ message: "File not found" });
 
     const storedPath = getSafePath(
-      path.join("Storage", req.user.id, fileMeta.storedName)
+      path.join("Storage", req.user.id, dirPath, fileMeta.storedName)
     );
 
-    res.sendFile(storedPath);
+    const action = req.query.action || "download";
+    if (action === "open") {
+      res.sendFile(path.resolve(storedPath));
+    } else {
+      res.download(path.resolve(storedPath), filename);
+    }
   } catch (err) {
-    res.status(404).json({ message: err.message });
+    console.error("Download error:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ Rename File → PATCH /files/{filename}
-router.patch("/{filename}", async (req, res) => {
+/* ===========================================================
+   ✅ Rename File → PATCH /files/{*filepath}
+=========================================================== */
+router.patch("/{*filepath}", async (req, res) => {
   try {
     const db = await connectDb();
     const filesCol = db.collection("files");
 
-    const { filename } = req.params;
+    const filepath = Array.isArray(req.params.filepath)
+      ? req.params.filepath.join("/")
+      : req.params.filepath;
+
+    const filename = path.basename(filepath);
+    const dirPath = path.dirname(filepath) === "." ? "" : path.dirname(filepath);
     const { newName } = req.body;
-    if (!newName)
-      return res.status(400).json({ message: "New name is required" });
+
+    if (!newName) return res.status(400).json({ message: "New name required" });
 
     const result = await filesCol.updateOne(
-      { name: filename, userId: req.user.id },
+      { name: filename, dirPath, userId: req.user.id },
       { $set: { name: newName, updatedAt: new Date() } }
     );
 
     if (result.matchedCount === 0)
       return res.status(404).json({ message: "File not found" });
 
-    res.json({ message: "Renamed successfully", newName });
+    res.json({ message: "✅ Renamed successfully", newName });
   } catch (err) {
+    console.error("Rename error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ Delete File → DELETE /files/{filename}
-router.delete("/{filename}", async (req, res) => {
+/* ===========================================================
+   ✅ Delete File → DELETE /files/{*filepath}
+=========================================================== */
+router.delete("/{*filepath}", async (req, res) => {
   try {
     const db = await connectDb();
     const filesCol = db.collection("files");
 
-    const { filename } = req.params;
+    const filepath = Array.isArray(req.params.filepath)
+      ? req.params.filepath.join("/")
+      : req.params.filepath;
+
+    const filename = path.basename(filepath);
+    const dirPath = path.dirname(filepath) === "." ? "" : path.dirname(filepath);
+
     const fileMeta = await filesCol.findOne({
       name: filename,
+      dirPath,
       userId: req.user.id,
     });
-    if (!fileMeta)
-      return res.status(404).json({ message: "File not found" });
+
+    if (!fileMeta) return res.status(404).json({ message: "File not found" });
 
     const storedPath = getSafePath(
-      path.join("Storage", req.user.id, fileMeta.storedName)
+      path.join("Storage", req.user.id, dirPath, fileMeta.storedName)
     );
 
-    await rm(storedPath, { force: true });
+    await fs.rm(storedPath, { force: true });
     await filesCol.deleteOne({ id: fileMeta.id });
 
-    res.json({ message: "Deleted successfully" });
+    res.json({ message: "✅ Deleted successfully" });
   } catch (err) {
+    console.error("Delete error:", err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// ✅ List Files in a Directory → GET /files?dirId={dirId}
+/* ===========================================================
+   ✅ List Files in a Directory → GET /files?dirPath=subfolder
+=========================================================== */
 router.get("/", async (req, res) => {
   try {
     const db = await connectDb();
     const filesCol = db.collection("files");
 
-    const dirId = req.query.dirId || "root";
-
+    const dirPath = req.query.dirPath || "";
     const files = await filesCol
-      .find({ userId: req.user.id, dirId })
+      .find({ userId: req.user.id, dirPath })
       .project({ _id: 0 })
       .toArray();
 
     res.json(files);
   } catch (err) {
+    console.error("List error:", err);
     res.status(500).json({ message: err.message });
   }
 });
