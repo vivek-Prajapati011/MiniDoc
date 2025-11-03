@@ -22,13 +22,11 @@ async function startServer() {
 
   app.use(
   cors({
-    origin: [
-      "http://localhost:5173",       // for local development
-      "http://192.168.1.9:5173"      // for LAN/mobile access
-    ],
-    credentials: true, // allow cookies
+    origin: true,
+    credentials: true,
   })
 );
+
 
 
     // ✅ Attach DB instance to all requests
