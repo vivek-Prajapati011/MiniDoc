@@ -6,6 +6,7 @@ import { connectDb } from "./Storage/Db.js";
 import directoryRoutes from "./routes/directoryRoute.js";
 import fileRoutes from "./routes/fileRoute.js";
 import userRoutes from "./routes/userRoute.js";
+import "./config/mongoose.js"
 
 const app = express();
 const PORT = 3000;
