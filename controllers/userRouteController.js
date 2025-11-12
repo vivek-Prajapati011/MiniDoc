@@ -1,7 +1,8 @@
 import crypto from "crypto";
-import { connectDb } from "../Storage/Db.js";
 import cookieParser from "cookie-parser";
+import User from "../models/userModel.js"; // ← now using your Mongoose model
 
+// ✅ Register User
 export const userRegister = async (req, res) => {
   const { name, email, password } = req.body;
 
@@ -10,31 +11,37 @@ export const userRegister = async (req, res) => {
   }
 
   try {
-    const db = await connectDb(); // ✅ get DB here
-    const usersCol = db.collection("users");
-
-    const exists = await usersCol.findOne({ email });
+    // Check if user exists
+    const exists = await User.findOne({ email });
     if (exists) {
       return res.status(400).json({ error: "User already exists" });
     }
 
-    const newUser = {
-      id: crypto.randomUUID(),
+    // Create new user
+    const newUser = new User({
       name,
       email,
-      password, // ⚠️ hash later with bcrypt
-      rootDirId: crypto.randomUUID(),
-    };
+      password, // ⚠️ you can later hash this with bcrypt
+      rootDirId: crypto.randomUUID(), // temporary unique ID if not using Directory model yet
+    });
 
-    await usersCol.insertOne(newUser);
+    await newUser.save();
 
-    res.json({ message: "User registered successfully", user: newUser });
+    res.json({
+      message: "User registered successfully",
+      user: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-}
+};
 
-export const loginInfo =  async (req, res) => {
+// ✅ Login User
+export const loginInfo = async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -42,37 +49,41 @@ export const loginInfo =  async (req, res) => {
   }
 
   try {
-    const db = await connectDb(); // ✅ get DB here
-    const usersCol = db.collection("users");
-
-    const user = await usersCol.findOne({ email, password });
+    const user = await User.findOne({ email, password }); // later use bcrypt.compare()
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    res.cookie("uid", user.id, { httpOnly: true });
-    res.json({ message: "Login successful", user });
+    res.cookie("uid", user._id.toString(), { httpOnly: true });
+    res.json({
+      message: "Login successful",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-}
+};
 
+// ✅ Logout User
 export const logout = (req, res) => {
   res.clearCookie("uid");
   res.json({ message: "Logged out successfully" });
-}
+};
 
-export const logUserInfo =  async (req, res) => {
+// ✅ Get Logged-In User Info
+export const logUserInfo = async (req, res) => {
   const { uid } = req.cookies;
+
   if (!uid) {
     return res.status(401).json({ error: "Not logged in" });
   }
 
   try {
-    const db = await connectDb(); // ✅ get DB here
-    const usersCol = db.collection("users");
-    const user = await usersCol.findOne({ id: uid });
-
+    const user = await User.findById(uid).select("-password");
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -81,4 +92,4 @@ export const logUserInfo =  async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-}
+};
