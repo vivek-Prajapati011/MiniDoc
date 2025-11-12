@@ -1,97 +1,113 @@
+import fs from "fs/promises";
 import path from "path";
-import { connectDb } from "../Storage/Db.js";
-import checkAuth from "../middleware/auth.js";
+import crypto from "crypto";
+import File from "../models/fileModel.js";
 import { getSafePath } from "../utils/pathUtils.js";
-import { mkdir, rm } from "fs/promises";
 
-export const listDirItem =  async (req, res) => {
+// ✅ Upload file
+export const uploadFile = async (req, res) => {
   try {
-    // Express 5 wildcard gives array if multiple levels — normalize to string
-    const dirPath = Array.isArray(req.params.path)
-      ? req.params.path.join("/")
-      : req.params.path || "root";
+    const filepath = req.params.path || "";
+    const filename = path.basename(filepath);
+    const dirPath = path.dirname(filepath) === "." ? "" : path.dirname(filepath);
 
-    const db = await connectDb();
-    const directories = db.collection("directories");
-    const files = db.collection("files");
+    const userDir = getSafePath(path.join("Storage", req.user.id, dirPath));
+    await fs.mkdir(userDir, { recursive: true });
 
-    // ✅ Fetch folders
-    const dirs = await directories
-      .find({ userId: req.user.id, parentId: dirPath })
-      .project({ _id: 0, name: 1 })
-      .toArray();
+    const fileId = crypto.randomUUID();
+    const ext = path.extname(req.file.originalname);
+    const storedName = `${fileId}${ext}`;
+    const storedPath = path.join(userDir, storedName);
+    await fs.rename(req.file.path, storedPath);
 
-    // ✅ Fetch files
-    const fileList = await files
-      .find({ userId: req.user.id, dirPath: dirPath === "root" ? "" : dirPath })
-      .project({ _id: 0, name: 1 })
-      .toArray();
-
-    // ✅ Combine both
-    const items = [
-      ...dirs.map((d) => ({ name: d.name, isDirectory: true })),
-      ...fileList.map((f) => ({ name: f.name, isDirectory: false })),
-    ];
-
-    res.json(items);
-  } catch (err) {
-    console.error("Error listing directory items:", err);
-    res.status(500).json({ message: err.message });
-  }
-};
-
-export const createDirectory = async (req, res) => {
-  try {
-    const { name, parentId = "root" } = req.body;
-    if (!name) return res.status(400).json({ message: "Directory name required" });
-
-    const db = await connectDb();
-    const directories = db.collection("directories");
-
-    const newDir = {
-      name,
-      parentId,
+    const fileDoc = await File.create({
+      name: filename,
+      extension: ext,
       userId: req.user.id,
-      createdAt: new Date(),
-    };
+      parentDirId: null,
+      storedName,
+      size: req.file.size,
+    });
 
-    await directories.insertOne(newDir);
-
-    // ✅ Also create the physical folder
-    const folderPath = getSafePath(path.join("Storage", req.user.id, parentId, name));
-    await mkdir(folderPath, { recursive: true });
-
-    res.json({ message: "✅ Directory created", name });
+    res.json({ message: "✅ Uploaded successfully", file: fileDoc });
   } catch (err) {
-    console.error("Create folder error:", err);
+    console.error("Upload error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-export const deleteDirectory = async (req, res) => {
+// ✅ Download or open file
+export const handleFileDownload = async (req, res) => {
   try {
-    const dirPath = Array.isArray(req.params.path)
-      ? req.params.path.join("/")
-      : req.params.path;
+    const filepath = req.params.path;
+    const filename = path.basename(filepath);
+    const dirPath = path.dirname(filepath) === "." ? "" : path.dirname(filepath);
 
-    if (!dirPath) return res.status(400).json({ message: "Path required" });
+    const file = await File.findOne({ name: filename, userId: req.user.id });
+    if (!file) return res.status(404).json({ message: "File not found" });
 
-    const db = await connectDb();
-    const directories = db.collection("directories");
-    const files = db.collection("files");
+    const storedPath = getSafePath(path.join("Storage", req.user.id, dirPath, file.storedName));
+    const action = req.query.action || "download";
 
-    // ✅ Delete from DB
-    await files.deleteMany({ userId: req.user.id, dirPath });
-    await directories.deleteMany({ userId: req.user.id, parentId: dirPath });
+    if (action === "open") {
+      return res.sendFile(path.resolve(storedPath));
+    }
 
-    // ✅ Delete physical folder
-    const folderPath = getSafePath(path.join("Storage", req.user.id, dirPath));
-    await rm(folderPath, { recursive: true, force: true });
-
-    res.json({ message: "✅ Folder deleted successfully" });
+    res.download(path.resolve(storedPath), filename);
   } catch (err) {
-    console.error("Delete folder error:", err);
+    console.error("Download error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
+// ✅ Rename file
+export const renameFile = async (req, res) => {
+  try {
+    const filepath = req.params.path;
+    const filename = path.basename(filepath);
+    const { newName } = req.body;
+
+    const updated = await File.findOneAndUpdate(
+      { name: filename, userId: req.user.id },
+      { name: newName },
+      { new: true }
+    );
+
+    if (!updated) return res.status(404).json({ message: "File not found" });
+    res.json({ message: "✅ Renamed", file: updated });
+  } catch (err) {
+    console.error("Rename error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ✅ Delete file
+export const deleteFile = async (req, res) => {
+  try {
+    const filepath = req.params.path;
+    const filename = path.basename(filepath);
+
+    const file = await File.findOneAndDelete({ name: filename, userId: req.user.id });
+    if (!file) return res.status(404).json({ message: "File not found" });
+
+    const storedPath = getSafePath(path.join("Storage", req.user.id, file.storedName));
+    await fs.rm(storedPath, { force: true });
+
+    res.json({ message: "✅ Deleted" });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ✅ List all files (for a user or directory)
+export const listFile = async (req, res) => {
+  try {
+    const dirPath = req.query.dirPath || "";
+    const files = await File.find({ userId: req.user.id, dirPath }).lean();
+    res.json(files);
+  } catch (err) {
+    console.error("List error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
