@@ -1,38 +1,16 @@
 import { model, Schema } from "mongoose";
 
-const userSchema = new Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      minLength: [
-        3,
-        "name field should a string with at least three characters",
-      ],
-    },
-    email: {
-      type: String,
-      required: true,
-      match: [
-        /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}$/,
-        "please enter a valid email",
-      ],
-    },
-    password: {
-      type: String,
-      required: true,
-      minLength: 4,
-    },
-    rootDirId: {
-      type: Schema.Types.ObjectId,
-      ref: "Directory",
-    },
+const userSchema = new Schema({
+  name: { type: String, required: true, minlength: 3 },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    match: /^[\w.%+-]+@[\w.-]+\.[a-zA-Z]{2,}$/,
   },
-  {
-    strict: "throw",
-  }
-);
+  password: { type: String, required: true, minlength: 4 },
+  rootDirId: { type: Schema.Types.ObjectId, ref: "Directory" },
+});
 
 const User = model("User", userSchema);
-
 export default User;
