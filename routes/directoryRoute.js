@@ -1,4 +1,3 @@
-// routes/directoryRoute.js
 import express from "express";
 import checkAuth from "../middleware/auth.js";
 import {
@@ -9,13 +8,16 @@ import {
 
 const router = express.Router();
 
-// ✅ Get all directories (optional param in Express 5)
-router.get("/{parentDirId}?", checkAuth, listDirectories);
+// ✅ Get root-level directories
+router.get("/", checkAuth, listDirectories);
+
+// ✅ Get child directories by parent ID
+router.get("/{parentDirId}", checkAuth, listDirectories);
 
 // ✅ Create a new directory
 router.post("/", checkAuth, createDirectory);
 
-// ✅ Delete a directory by ID (Express 5 syntax)
+// ✅ Delete a directory by ID
 router.delete("/{dirId}", checkAuth, deleteDirectory);
 
 export default router;
