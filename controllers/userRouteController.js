@@ -1,95 +1,50 @@
 import crypto from "crypto";
-import cookieParser from "cookie-parser";
-import User from "../models/userModel.js"; // ← now using your Mongoose model
+import User from "../models/userModel.js";
 
-// ✅ Register User
+// REGISTER
 export const userRegister = async (req, res) => {
-  const { name, email, password } = req.body;
-
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: "All fields are required" });
-  }
-
   try {
-    // Check if user exists
+    const { name, email, password } = req.body;
+    if (!name || !email || !password)
+      return res.status(400).json({ message: "All fields are required" });
+
     const exists = await User.findOne({ email });
-    if (exists) {
-      return res.status(400).json({ error: "User already exists" });
-    }
+    if (exists) return res.status(400).json({ message: "User already exists" });
 
-    // Create new user
-    const newUser = new User({
-      name,
-      email,
-      password, // ⚠️ you can later hash this with bcrypt
-      rootDirId: crypto.randomUUID(), // temporary unique ID if not using Directory model yet
-    });
-
-    await newUser.save();
-
-    res.json({
-      message: "User registered successfully",
-      user: {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-      },
-    });
+    const user = await User.create({ name, email, password, rootDirId: crypto.randomUUID() });
+    res.json({ message: "✅ Registered", user: { id: user._id, name, email } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// ✅ Login User
+// LOGIN
 export const loginInfo = async (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
-  }
-
   try {
-    const user = await User.findOne({ email, password }); // later use bcrypt.compare()
-    if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
+    const { email, password } = req.body;
+    const user = await User.findOne({ email, password });
+    if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     res.cookie("uid", user._id.toString(), { httpOnly: true });
-    res.json({
-      message: "Login successful",
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-    });
+    res.json({ message: "✅ Login successful", user });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// ✅ Logout User
+// LOGOUT
 export const logout = (req, res) => {
   res.clearCookie("uid");
-  res.json({ message: "Logged out successfully" });
+  res.json({ message: "✅ Logged out" });
 };
 
-// ✅ Get Logged-In User Info
+// CURRENT USER
 export const logUserInfo = async (req, res) => {
   const { uid } = req.cookies;
+  if (!uid) return res.status(401).json({ message: "Not logged in" });
 
-  if (!uid) {
-    return res.status(401).json({ error: "Not logged in" });
-  }
+  const user = await User.findById(uid).select("-password");
+  if (!user) return res.status(404).json({ message: "User not found" });
 
-  try {
-    const user = await User.findById(uid).select("-password");
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.json({ user });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.json({ user });
 };
